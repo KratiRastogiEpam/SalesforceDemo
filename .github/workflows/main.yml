@@ -46,7 +46,7 @@ jobs:
 
       - name: 'Polpulate auth file with sfdx_auth_url secret'
         shell: bash
-        run: 'echo ${{ secrets.SF_DEVHUB_AUTH_URL}} > SF_DEV_URL'
+        run: 'echo ${{ secrets.SF_DEVHUB_AUTH_URL}}'
 
       - name: 'Authenticate against dev hub url'
         run: node_modules/sfdx-cli/bin/run force:auth:sfdxurl:store -f SF_DEV_URL -s -a DEVHUB
