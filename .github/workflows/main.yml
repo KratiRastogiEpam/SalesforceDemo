@@ -48,9 +48,9 @@ jobs:
         shell: bash
         run: |
           'echo "Value of auth url repo variable is - '
-          'echo ${{SF_DEVHUB_AUTH_URL}}'
+          'echo ${{ secrets.SF_DEVHUB_AUTH_URL }}'
           'echo "Stroring variable value in a file .....'
-          'echo ${{SF_DEVHUB_AUTH_URL}} > SF_DEV_URL'
+          'echo ${{ secrets.SF_DEVHUB_AUTH_URL }} > SF_DEV_URL'
 
 
       - name: 'Authenticate against dev hub url'
