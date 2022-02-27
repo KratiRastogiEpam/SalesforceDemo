@@ -2,7 +2,7 @@ public with sharing class Calculator {
     public static Integer add(Integer a, Integer b) {
         return a + b;
     }
-
+    // This is a comment
     public static Integer sub(Integer a, Integer b) {
         return a - b;
     }
