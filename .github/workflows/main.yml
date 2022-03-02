@@ -1,41 +1,125 @@
-# This is a basic workflow to help you get started with Actions
+# Unique name for this workflow
+name: SalesforceDemo
 
-name: Salesfoce Demo
-
-# Controls when the workflow will run
+# Definition when the workflow should run
 on:
-  # Triggers the workflow on push events but only for the main branch
-  push:
-    branches: [ main ]
+    workflow_dispatch:
+    push:
+        branches:
+            - main
+        paths-ignore:
+            - 'sfdx-project.json'
+            - 'README.md'
 
-# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+# Jobs to be executed
 jobs:
-  # This workflow contains a single job called "build"
-  
-  build:
+    format-lint-lwc-tests:
+        runs-on: ubuntu-latest
+        steps:
+            # Checkout the source code
+            - name: 'Checkout source code'
+              uses: actions/checkout@v2
 
-    runs-on: ubuntu-latest
+            # Install Volta to enforce proper node and package manager versions
+            - name: 'Install Volta'
+              uses: volta-cli/action@v1
 
-    steps:
-      - uses: actions/checkout@v2              
-      - name: Write the token into a file
-        run: 'echo ${{ secrets.SF_DEVHUB_AUTH_URL}} > token.txt'
-      - name: Install Salesforce CLI
-        run: |
-          wget https://developer.salesforce.com/media/salesforce-cli/sfdx-linux-amd64.tar.xz
-          mkdir sfdx-cli
-          tar xJf sfdx-linux-amd64.tar.xz -C sfdx-cli --strip-components 1
-          ./sfdx-cli/install
-      - name: Auth with the DevHub
-        run: 'sfdx force:auth:sfdxurl:store -f token.txt -a DevHub -d'
-      - name: Create scratch org
-        run: 'sfdx force:org:create -f config/project-scratch-def.json -a my-scratch'
-      - name: Push source
-        run: 'sfdx force:source:push -u my-scratch'
-      - name: List orgs
-        run: 'sfdx force:org:list'
-      - name: Run tests
-        run: 'sfdx force:apex:test:run -u my-scratch --resultformat human'
-      - name: Delete scratch org
-        run: 'sfdx force:org:delete -u my-scratch --noprompt'        
+            # Cache node_modules to speed up the process
+            #- name: "Restore node_modules cache"
+            #  id: cache-npm
+            #  uses: actions/cache@v1
+            #  with:
+            #    path: node_modules
+            #    key: npm-${{ hashFiles('**/package-lock.json') }}
+            #    restore-keys: |
+            #      npm-${{ env.cache-name }}-
+            #      npm-
 
+            # Install npm dependencies for Prettier and Jest
+            - name: 'Install npm dependencies'
+              if: steps.cache-npm.outputs.cache-hit != 'true'
+              run: npm ci
+
+            # Prettier formatting
+            #- name: 'Code formatting verification with Prettier'
+            #  run: npm run prettier:verify
+
+            # Lint LWC / Aura
+            #- name: "Lint Lightning Web Components / Aura Components"
+            #  run: npm run lint
+
+            # LWC unit tests
+            #- name: "Unit test Lightning Web Components"
+            #  run: npm run test:unit:coverage
+
+            # Upload code coverage data
+            #- name: "Upload code coverage for LWC to Codecov.io"
+            #  uses: codecov/codecov-action@v2.0.2
+            #  with:
+            #    flags: LWC
+
+    scratch-org-test:
+        runs-on: ubuntu-latest
+        needs: format-lint-lwc-tests
+        if: ${{ github.actor != 'dependabot[bot]' }}
+        steps:
+            # Install Salesforce CLI
+            - name: 'Install Salesforce CLI'
+              run: |
+                  wget https://developer.salesforce.com/media/salesforce-cli/sfdx/channels/stable/sfdx-linux-x64.tar.xz
+                  mkdir ~/sfdx
+                  tar xJf sfdx-linux-x64.tar.xz -C ~/sfdx --strip-components 1
+                  echo "$HOME/sfdx/bin" >> $GITHUB_PATH
+                  ~/sfdx/bin/sfdx version
+
+            # Checkout the source code
+            - name: 'Checkout source code'
+              uses: actions/checkout@v2
+
+            # Store secret for dev hub
+            - name: 'Populate auth file with DEVHUB_SFDX_URL secret'
+              shell: bash
+              run: |
+                  echo ${{ secrets.DEVHUB_SFDX_URL}} > ./DEVHUB_SFDX_URL.txt
+                  secretFileSize=$(wc -c "./DEVHUB_SFDX_URL.txt" | awk '{print $1}')
+                  if [ $secretFileSize == 1 ]; then
+                      echo "Missing DEVHUB_SFDX_URL secret. Is this workflow running on a fork?";
+                      exit 1;
+                  fi
+
+            # Authenticate dev hub
+            - name: 'Authenticate Dev Hub'
+              run: sfdx auth:sfdxurl:store -f ./DEVHUB_SFDX_URL.txt -a devhub -d
+
+            # Print the limits
+            - name: 'Print the limits'
+              run: sfdx force:limits:api:display -u devhub
+
+            # Create scratch org
+            - name: 'Create scratch org'
+              run: sfdx force:org:create -f config/project-scratch-def.json -a scratch-org -s -d 1 -v devhub
+
+            # Deploy source to scratch org
+            - name: 'Push source to scratch org'
+              run: sfdx force:source:push
+
+            # Assign permissionset
+            #- name: "Assign permissionset to default user"
+            #  run: sfdx force:user:permset:assign -n dreamhouse
+
+            # Import sample data
+            #- name: "Import sample data"
+            #  run: sfdx force:data:tree:import -p ./data/sample-data-plan.json
+
+            # Run Apex tests in scratch org
+            - name: 'Run Apex tests'
+              run: sfdx force:apex:test:run -c -r human -d ./tests/apex -w 20
+
+            # Delete temporary test file that Codecov is unable to parse
+            - name: 'Delete coverage file (temporary step)'
+              run: rm ./tests/apex/test-result-707*-codecoverage.json
+
+            # Housekeeping
+            - name: 'Delete scratch org'
+              if: always()
+              run: sfdx force:org:delete -p -u scratch-org
